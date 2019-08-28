@@ -14,8 +14,8 @@ function test()
     sol1 = with_logger(NullLogger()) do
       sqp(nlp1)
     end
-    @test sol1.primal_feas <= 1e-8
-    @test sol1.dual_feas <= 1e-8
+    @test sol1.primal_feas < 1e-8
+    @test sol1.dual_feas < 1e-8
     @test sol1.elapsed_time < 30
     @test sol1.iter < 1000
   end
