@@ -6,7 +6,7 @@ using NLPModels
 using LinearAlgebra
 
 function test()
-  @testset "teste que falha" begin
+  @testset "teste 1" begin
     f1(x) = (x[1] - 2x[3]*(1 - x[2]))^4 + (x[2] - x[1])^2
     x1 = [1.0, 1.0, 1.0]
     c1(x) = [x[1] * x[3], x[1] + x[3]^3 - x[2] * x[1]]
