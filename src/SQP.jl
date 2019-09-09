@@ -49,14 +49,15 @@ function sqp(nlp;
         end
     end
 
-    @info log_header([:iter, :time, :firt_order, :normcx, :radius, :ratio], [Int, Float64, Float64, Float64, Float64, Float64])
+    @info log_header([:iter, :time, :dual, :normcx, :radius, :ratio], [Int, Float64, Float64, Float64, Float64, Float64])
     @info log_row(Any[iter, now, norm_first, norm_cx, tr.radius, ρ])
 
     while !(success || tired)
-        v = lsmr(A, -cx, radius = relax_param * trust_reg)[1]
+        v = lsmr(A, -cx, radius = relax_param * tr.radius)[1]
         ZWZ = Z' * W * Z
         ZWv = Z' * (W*v + gx)
-        u = cg(ZWZ, -ZWv, radius = sqrt(trust_reg^2 - norm(v)^2))[1]
+        # TODO: Needs |Zu| ≤ Δ
+        u = cg(ZWZ, -ZWv, radius = sqrt(tr.radius^2 - norm(v)^2))[1]
         d = v + Z * u
         next_x = x + d
         next_f = obj(nlp, next_x)
@@ -74,7 +75,6 @@ function sqp(nlp;
         ared, pred = aredpred(nlp_aux, ϕx, ϕn, Δm, next_x, d, dot(d, grad(nlp_aux,x)))
         ρ = ared / pred
         set_property!(tr, :ratio, ρ)
-        tr = update!(tr, norm(d))
 
         if acceptable(tr)
             x = next_x
@@ -87,6 +87,8 @@ function sqp(nlp;
             W = Symmetric(hess(nlp, x, y = y), :L)
             Z = nullspace(A)
         end
+
+        update!(tr, norm(d))
 
         norm_first = norm(A'*y - gx)
         success = norm_first < precision && norm_cx < precision
