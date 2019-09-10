@@ -15,7 +15,8 @@ function sqp(nlp;
              max_iter = 1000,
              time_lim = 30,
              relax_param = 0.5,
-             trust_reg = 1.0)
+             trust_reg = 3.0,
+             μ0 = 1.0)
 
     iter = 1
     time_0 = time()
@@ -32,6 +33,11 @@ function sqp(nlp;
     norm_cx = norm(cx)
     tr = TrustRegion(eval(trust_reg))
     ρ = 0.0
+    μ = μ0
+    μa = μ0 # tava dando erro no if dai colequei como μ0 se fosse o primeiro a ser aceito
+    norm_ca = norm_cx
+    last_rejected = false
+    older_rejected = false
 
     exitflag = :unknow
     norm_first = norm(A'*y - gx)
@@ -57,22 +63,32 @@ function sqp(nlp;
         ZWZ = Z' * W * Z
         ZWv = Z' * (W*v + gx)
         # TODO: Needs |Zu| ≤ Δ
+        # Z eh ortogonal dai se |u| ≤ Δ (o cg calcula o melhor u que satifaz isso) então |Zu| tambem
         u = cg(ZWZ, -ZWv, radius = sqrt(tr.radius^2 - norm(v)^2))[1]
         d = v + Z * u
         next_x = x + d
         next_f = obj(nlp, next_x)
         next_c = cons(nlp, next_x) - nlp.meta.ucon
         next_norm_c = norm(next_c)
-        vpred = norm(A*v + cx) - norm_cx
-        upred = (-0.5*u'*ZWZ*u)[1] - dot(ZWv,u)
-        μ = norm(y, Inf)
-        ϕ(x) = obj(nlp, x) + μ * norm(cons(nlp, x))
+        vpred = norm_cx - norm(A*v + cx)
+        upred = 0.5 * (u'*ZWZ*u)[1] + dot(ZWv,u)
+        μb = 0.1 + upred / vpred # μ com barra do artigo que fica dentro do max, esse upred e vpred so pq ja tinha sido calculado antes aquelas contas
+
+        μt = max(μ, μb) # μ+ do artigo
+        if μt > μ && μt < 5*μ && μ > μa && norm_cx > 0.2*norm_ca && (last_rejected || older_rejected)
+            μt = min(5*μ, μt + 25*(μt - μa))
+        end
+        if μt == μ && norm(v) < relax_param * tr.radius/10 && norm_cx < 1e4 * precision
+            μt = max(μ0, μb, norm(y))
+        end
+
+        ϕ(x) = obj(nlp, x) + μt * norm(cons(nlp, x))
         nlp_aux = ADNLPModel(ϕ, x)
-        ϕx = fx + μ * norm_cx
-        ϕn = next_f + μ * next_norm_c
+        ϕx = fx + μt * norm_cx
+        ϕn = next_f + μt * next_norm_c
         Δm = μ * vpred - upred
 
-        ared, pred = aredpred(nlp_aux, ϕx, ϕn, Δm, next_x, d, dot(d, grad(nlp_aux,x)))
+        ared, pred = aredpred(nlp_aux, ϕn, ϕx, Δm, next_x, d, dot(d, grad(nlp_aux,x)))
         ρ = ared / pred
         set_property!(tr, :ratio, ρ)
 
@@ -86,7 +102,13 @@ function sqp(nlp;
             y = lsmr(A', gx)[1]
             W = Symmetric(hess(nlp, x, y = y), :L)
             Z = nullspace(A)
+            older_rejected = last_rejected # As duas ultimas iteracoes para calcular o μ
+            last_rejected = true
+            μa = μ # Ultimo μ aceito
+            norm_ca = norm_cx # ultima norma aceita
         end
+
+        μ = μt
 
         update!(tr, norm(d))
 
