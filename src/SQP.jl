@@ -8,15 +8,29 @@ using LinearAlgebra
 using Krylov
 using NLPModels
 using SolverTools
+using JSOSolvers
 
 
 function sqp(nlp;
              precision = 1e-8,
              max_iter = 1000,
-             time_lim = 30,
+             time_lim = 30.0,
              relax_param = 0.5,
              trust_reg = 3.0,
              μ0 = 1.0)
+
+
+    if bound_constrained(nlp)
+        return tron(nlp, x = copy(nlp.meta.x0), max_time = time_lim, atol = precision)
+    end
+
+    if unconstrained(nlp)
+        return trunk(nlp, x = copy(nlp.meta.x0), max_time = time_lim, nm_itmax = max_iter, atol = precision)
+    end
+
+    if equality_constrained(nlp) == false || has_bounds(nlp) == true
+        error("This SQP implementation only works for equality constraints and unbounded variables")
+    end
 
     iter = 1
     time_0 = time()
@@ -31,13 +45,13 @@ function sqp(nlp;
     W = Symmetric(hess(nlp, x, y = y), :L)
     Z = nullspace(A)
     norm_cx = norm(cx)
-    tr = TrustRegion(eval(trust_reg))
+    tr = TrustRegion(trust_reg)
     ρ = 0.0
     μ = μ0
-    μa = μ0 # tava dando erro no if dai colequei como μ0 se fosse o primeiro a ser aceito
-    norm_ca = norm_cx
-    last_rejected = false
-    older_rejected = false
+    last_accepted_μ = μ0 # for the first iteration
+    last_accepted_norm_c = norm_cx
+    last_rejected = false # the information from the last two steps is needed for the μ update
+    last_but_one_rejected = false
 
     exitflag = :unknow
     norm_first = norm(A'*y - gx)
@@ -62,30 +76,29 @@ function sqp(nlp;
         v = lsmr(A, -cx, radius = relax_param * tr.radius)[1]
         ZWZ = Z' * W * Z
         ZWv = Z' * (W*v + gx)
-        # TODO: Needs |Zu| ≤ Δ
-        # Z eh ortogonal dai se |u| ≤ Δ (o cg calcula o melhor u que satifaz isso) então |Zu| tambem
         u = cg(ZWZ, -ZWv, radius = sqrt(tr.radius^2 - norm(v)^2))[1]
         d = v + Z * u
+
         next_x = x + d
         next_f = obj(nlp, next_x)
         next_c = cons(nlp, next_x) - nlp.meta.ucon
         next_norm_c = norm(next_c)
         vpred = norm_cx - norm(A*v + cx)
         upred = 0.5 * (u'*ZWZ*u)[1] + dot(ZWv,u)
-        μb = 0.1 + upred / vpred # μ com barra do artigo que fica dentro do max, esse upred e vpred so pq ja tinha sido calculado antes aquelas contas
+        μ_bar = 0.1 + upred / vpred # auxiliary variable for μ update
 
-        μt = max(μ, μb) # μ+ do artigo
-        if μt > μ && μt < 5*μ && μ > μa && norm_cx > 0.2*norm_ca && (last_rejected || older_rejected)
-            μt = min(5*μ, μt + 25*(μt - μa))
+        μ_plus = max(μ, μ_bar) # another auxiliary variable
+        if μ_plus > μ && μ_plus < 5*μ && μ > last_accepted_μ && norm_cx > 0.2*last_accepted_norm_c && (last_rejected || last_but_one_rejected)
+            μ_plus = min(5*μ, μ_plus + 25*(μ_plus - last_accepted_μ))
         end
-        if μt == μ && norm(v) < relax_param * tr.radius/10 && norm_cx < 1e4 * precision
-            μt = max(μ0, μb, norm(y))
+        if μ_plus == μ && norm(v) < relax_param * tr.radius/10 && norm_cx < 1e4 * precision
+            μ_plus = max(μ0, μ_bar, norm(y))
         end
 
-        ϕ(x) = obj(nlp, x) + μt * norm(cons(nlp, x))
+        ϕ(x) = obj(nlp, x) + μ_plus * norm(cons(nlp, x))
         nlp_aux = ADNLPModel(ϕ, x)
-        ϕx = fx + μt * norm_cx
-        ϕn = next_f + μt * next_norm_c
+        ϕx = fx + μ_plus * norm_cx
+        ϕn = next_f + μ_plus * next_norm_c
         Δm = μ * vpred - upred
 
         ared, pred = aredpred(nlp_aux, ϕn, ϕx, Δm, next_x, d, dot(d, grad(nlp_aux,x)))
@@ -102,13 +115,13 @@ function sqp(nlp;
             y = lsmr(A', gx)[1]
             W = Symmetric(hess(nlp, x, y = y), :L)
             Z = nullspace(A)
-            older_rejected = last_rejected # As duas ultimas iteracoes para calcular o μ
+            last_but_one_rejected = last_rejected
             last_rejected = true
-            μa = μ # Ultimo μ aceito
-            norm_ca = norm_cx # ultima norma aceita
+            last_accepted_μ = μ
+            last_accepted_norm_c = norm_cx
         end
 
-        μ = μt
+        μ = μ_plus
 
         update!(tr, norm(d))
 
