@@ -10,11 +10,10 @@ using NLPModels
 using SolverTools
 using JSOSolvers
 
-include("merit_function.jl")
-
 
 function sqp(nlp :: AbstractNLPModel;
-             atol :: Real = 1e-7, rtol :: Real = 1e-7,
+             atol :: Real = 1e-7,
+             rtol :: Real = 1e-7,
              max_iter :: Int = 1000,
              max_time :: Float64 = 30.0,
              cons_tol :: Real = 1e-7,
