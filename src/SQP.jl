@@ -12,15 +12,15 @@ using JSOSolvers
 
 
 function sqp(nlp :: AbstractNLPModel;
-             atol :: Real = 1e-7,
-             rtol :: Real = 1e-7,
+             atol :: Real = 1e-8,
+             rtol :: Real = 1e-8,
+             max_eval :: Int = -1,
+             cons_tol :: Real = 1e-8,
              max_iter :: Int = 1000,
              max_time :: Float64 = 30.0,
-             cons_tol :: Real = 1e-7,
              relax_param :: Float64 = 0.5,
              trust_reg :: Float64 = 3.0,
-             max_eval :: Int = -1,
-             μ0 ::Float64 = 1.0)
+             μ0 :: Float64 = 1.0)
 
 
     if bound_constrained(nlp)
@@ -60,19 +60,19 @@ function sqp(nlp :: AbstractNLPModel;
     dual = A'*y - gx
     normdual = norm(dual)
     tol = atol + rtol * normdual
-    success = normdual <= tol && norm_cx <= cons_tol
+    success = normdual < tol && norm_cx < cons_tol
     if success
         exitflag = :first_order
     end
     Δt = time() - start_time
-    tired = Δt > max_time || iter > max_iter || neval_obj(nlp) > max_eval >= 0
+    tired = Δt > max_time || iter > max_iter || neval_obj(nlp) > max_eval > 0
     if tired
          if Δt > max_time
             exitflag = :max_time
-        elseif neval_obj(nlp) > max_eval >= 0
-            exitflag = :max_eval
-        else
+        elseif iter > max_iter
             exitflag = :max_iter
+        else
+            exitflag = :max_eval
         end
     end
 
@@ -91,7 +91,7 @@ function sqp(nlp :: AbstractNLPModel;
         next_c = cons(nlp, next_x) - nlp.meta.ucon
         next_norm_c = norm(next_c)
         vpred = norm_cx - norm(A*v + cx)
-        upred = 0.5 * (u'*ZWZ*u)[1] + dot(ZWv, u)
+        upred = 0.5 * (u'*ZWZ*u)[1] + dot(ZWv,u)
         μ_bar = 0.1 + upred / vpred # auxiliary variable for μ update
 
         μ_plus = max(μ, μ_bar) # another auxiliary variable
@@ -134,20 +134,20 @@ function sqp(nlp :: AbstractNLPModel;
 
         dual = A'*y - gx
         normdual = norm(dual)
-        success = normdual <= tol && norm_cx <= cons_tol
+        success = normdual < tol && norm_cx < cons_tol
         if success
             exitflag = :first_order
         end
         Δt = time() - start_time
         iter += 1
-        tired = Δt > max_time || iter > max_iter || neval_obj(nlp) > max_eval >= 0
+        tired = Δt > max_time || iter > max_iter || neval_obj(nlp) > max_eval > 0
         if tired
             if Δt > max_time
                 exitflag = :max_time
-            elseif neval_obj(nlp) > max_eval >= 0
-                exitflag = :max_eval
-            else
+            elseif iter > max_iter
                 exitflag = :max_iter
+            else
+                exitflag = :max_eval
             end
         end
 

@@ -9,7 +9,7 @@ using NLPModels
 
 function test()
   # unconstrained tests from JSOSolvers
-  # test_unconstrained_solver(sqp)
+   test_unconstrained_solver(sqp)
 
   @testset "Small equality constrained problems" begin
     for (x0, m, f, c, sol) in [([1.0; 2.0], 1,
