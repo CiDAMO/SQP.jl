@@ -46,7 +46,7 @@ function sqp(nlp :: AbstractNLPModel;
     gx = grad(nlp, x)
     A = jac(nlp, x)
     W = Symmetric(hess(nlp, x, y = y), :L)
-    Z = nullspace(A)
+    Z = nullspace(Matrix(A))
     norm_cx = norm(cx)
     tr = TrustRegion(trust_reg)
     ρ = 0.0
@@ -121,7 +121,7 @@ function sqp(nlp :: AbstractNLPModel;
             gx = grad(nlp, x)
             y = lsmr(A', gx)[1]
             W = Symmetric(hess(nlp, x, y = y), :L)
-            Z = nullspace(A)
+            Z = nullspace(Matrix(A))
             last_but_one_rejected = last_rejected
             last_rejected = true
             last_accepted_μ = μ
