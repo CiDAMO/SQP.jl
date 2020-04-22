@@ -18,7 +18,7 @@ function sqp(nlp :: AbstractNLPModel;
              cons_tol :: Real = 1e-8,
              max_iter :: Int = 1000,
              max_time :: Float64 = 30.0,
-             relax_param :: Float64 = 0.5,
+             relax_param :: Float64 = 0.6,
              trust_reg :: Float64 = 3.0,
              μ0 :: Float64 = 1.0)
 
@@ -45,8 +45,8 @@ function sqp(nlp :: AbstractNLPModel;
     cx = cons(nlp, x) - nlp.meta.ucon
     gx = grad(nlp, x)
     A = jac(nlp, x)
-    W = Symmetric(hess(nlp, x, y = y), :L)
-    Z = nullspace(A)
+    W = Symmetric(hess(nlp, x, y), :L)
+    Z = nullspace(Matrix(A))
     norm_cx = norm(cx)
     tr = TrustRegion(trust_reg)
     ρ = 0.0
@@ -102,14 +102,14 @@ function sqp(nlp :: AbstractNLPModel;
             μ_plus = max(μ0, μ_bar, norm(y))
         end
 
-        ϕ(x) = obj(nlp, x) + μ_plus * norm(cons(nlp, x))
-        nlp_aux = ADNLPModel(ϕ, x)
+        #ϕ(x) = obj(nlp, x) + μ_plus * norm(cons(nlp, x))
+     	#nlp_aux = ADNLPModel(ϕ, x)
         ϕx = fx + μ_plus * norm_cx
         ϕn = next_f + μ_plus * next_norm_c
-        Δm = μ * vpred - upred
+        Δm =  μ * vpred - upred
 
-        ared, pred = aredpred(nlp_aux, ϕn, ϕx, Δm, next_x, d, dot(d, grad(nlp_aux,x)))
-        ρ = ared / pred
+        ared, pred = aredpred(nlp, ϕn, ϕx, Δm, next_x, d, dot(d, gx) - μ_plus * norm_cx)
+        ρ = (ared  + tol) / (pred + tol)
         set_property!(tr, :ratio, ρ)
 
         if acceptable(tr)
@@ -120,8 +120,8 @@ function sqp(nlp :: AbstractNLPModel;
             A = jac(nlp, x)
             gx = grad(nlp, x)
             y = lsmr(A', gx)[1]
-            W = Symmetric(hess(nlp, x, y = y), :L)
-            Z = nullspace(A)
+            W = Symmetric(hess(nlp, x, y), :L)
+            Z = nullspace(Matrix(A))
             last_but_one_rejected = last_rejected
             last_rejected = true
             last_accepted_μ = μ
